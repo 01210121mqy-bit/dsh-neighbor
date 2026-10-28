@@ -1,0 +1,6 @@
+# dsh-neighbor — bundle patch layer
+#
+# 声明本插件为 Cordis 加载项，让 profile 能把它当标准 bundle 挂上。
+- insert:
+    - id: neighbor
+      name: 'dsh-neighbor'
