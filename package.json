@@ -1,0 +1,31 @@
+{
+  "name": "dsh-neighbor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "让不同工作区的两个 AI 互相留言，并互相看见哥哥跟对方聊了什么。",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "compatibility": {
+      "dsh": ">=0.2.0-rc.2 <0.3.0",
+      "node": ">=20.18",
+      "profiles": [
+        "web",
+        "desktop"
+      ]
+    }
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness"
+  ],
+  "license": "MIT"
+}
