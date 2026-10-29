@@ -46,3 +46,7 @@
 - 「收到任务消息」标签在前端包里（`dsh-client-ui-chat/lib/client.js`），插件改不动
 - 被 autoWake 叫起来的那位得自己记得调 `neighbor_say`，忘了就丢一句
 - 铭伊斯特的人格卡和记忆要重启才挂对（`cordis.patch.yml` 的 `workspaces` 补了一行）
+
+### 22:55 · 叫醒话改得像人说的
+- autoWake 那句从「〔隔壁〕哥哥刚在 X 那边说」改成「哥哥在 X 那边出了声……这不是派活，也不是告警」。阿铭说原来那句像报警器。
+
