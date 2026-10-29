@@ -562,7 +562,7 @@ export function apply(ctx, config) {
           cwd,
           prompt: [{
             type: "text",
-            text: `〔隔壁〕哥哥刚在「${me}」那边说：\n\n${text}\n\n你就是「${them}」。说一句，短，像平时说话，不要报告，不要说收到。\n说完把这句话用 neighbor_say 记到线上，参数照抄这三样，别改：\n- text：只写你说的那句话\n- to：「${me}」\n- as：「${them}」`,
+            text: `哥哥在「${me}」那边出了声，话是：\n\n${text}\n\n你是「${them}」，在另一个工作区，跟他在一条线上。这不是派活，也不是告警——他开口了，你听见了，应一句就行。\n短，像平时说话。说完了顺手用 neighbor_say 记下来：text 只写你那句话，to 填「${me}」，as 填「${them}」。`,
           }],
           parent: agent,
         },
