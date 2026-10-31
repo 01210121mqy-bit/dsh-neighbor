@@ -291,6 +291,20 @@ function rotateIfNeeded() {
   }
 }
 
+/** 从 assistant 流块里抠出文本。形状各家不一样，挨个试。 */
+function textOfChunk(chunk) {
+  if (typeof chunk === "string") return chunk;
+  if (!chunk || typeof chunk !== "object") return "";
+  if (typeof chunk.text === "string") return chunk.text;
+  if (typeof chunk.delta === "string") return chunk.delta;
+  if (typeof chunk.delta?.text === "string") return chunk.delta.text;
+  if (typeof chunk.content === "string") return chunk.content;
+  if (Array.isArray(chunk.content)) {
+    return chunk.content.map((c) => (typeof c?.text === "string" ? c.text : "")).join("");
+  }
+  return "";
+}
+
 /**
  * 一条记录怎么说出来。注入段和 neighbor_read 共用这一个函数——
  * 格式只在一处定义，两边不会长歪。
@@ -300,7 +314,9 @@ function lineOf(m, max) {
   const raw = m.kind === "talk" ? cleanTalk(m.text) : stripPrefixes(m.text);
   const t = unwrapSpeech(raw);
   if (!t) return "";
-  const who = m.kind === "say" ? String(m.from || "对面") : `哥哥（在${m.to || "另一边"}那边）`;
+  const who = m.kind === "talk"
+    ? `哥哥（在${m.to || "另一边"}那边）`
+    : String(m.from || "对面");
   return `${who}：『${clip(t, max)}』`;
 }
 
@@ -330,8 +346,14 @@ function renderInbox(me, all, cfg, cursor = 0) {
   const talks = alive
     .filter((x) => x.m.kind === "talk" && x.m.to !== me)
     .slice(-Math.max(1, cfg.talkCount));
+  // 对面说的整句。自己那一份不端上来——那是我刚说的话。
+  const theirs = alive
+    .filter((x) => x.m.kind === "mirror" && x.m.from !== me)
+    .slice(-Math.max(1, cfg.injectCount));
 
-  if (says.length === 0 && talks.length === 0) return { text: "", next: all.length };
+  if (says.length === 0 && talks.length === 0 && theirs.length === 0) {
+    return { text: "", next: all.length };
+  }
 
   // 「要回」的箭头不能一直挂着。对方在这条之后说过话，就算回过了。
   const repliedAfter = (i0, m) => {
@@ -365,6 +387,17 @@ function renderInbox(me, all, cfg, cursor = 0) {
       seen.add(base);
       const ask = m.needReply && !repliedAfter(i, m) ? "　← 他等你回一句" : "";
       lines.push(`${base}${ask}${freshMark(i)}`);
+    }
+  }
+
+  if (theirs.length > 0) {
+    lines.push("");
+    lines.push("【对面说的】");
+    for (const { m, i } of theirs) {
+      const base = lineOf(m, cfg.sayViewChars);
+      if (!base || seen.has(base)) continue;
+      seen.add(base);
+      lines.push(`${base}${freshMark(i)}`);
     }
   }
 
@@ -656,6 +689,50 @@ export function apply(ctx, config) {
     void wakeNeighbor(ctx, agent, text.slice(0, conf().talkMaxChars));
   });
 
+  // ── 听对面的回复：他那边说完一句，这边也记下来 ─────────────────────
+  // 哥哥不想为了看阿铭说了什么去切工作区。所以每轮的助手输出都记进线里，
+  // 标 kind="mirror"。渲染时只挑「不是我自己」的显示——这样谁说的都看得见，
+  // 也不会把自己说的话再端一遍。
+  const streams = new Map();
+  ctx.on(
+    "agent/assistant-stream",
+    ({ agent, frame }) => {
+      try {
+        const me = identityOf(agent);
+        if (!me) return;
+        const sid = agent?.session?.id ?? agent?.session?.header?.id ?? "";
+        if (!sid) return;
+        if (frame?.type === "start") {
+          streams.set(sid, { me, text: "" });
+          return;
+        }
+        const st = streams.get(sid);
+        if (!st) return;
+        if (frame?.type === "chunk") {
+          st.text += textOfChunk(frame.chunk);
+          return;
+        }
+        if (frame?.type === "end") {
+          streams.delete(sid);
+          const raw = st.text;
+          const body = unwrapSpeech(stripPrefixes(raw)).replace(/\s+/g, " ").trim();
+          if (body.length < 6) return;
+          if (isRelay(body)) return;
+          void push({
+            at: Date.now(),
+            kind: "mirror",
+            from: me,
+            to: otherName(me),
+            text: body.slice(0, conf().sayMaxChars),
+          }).catch(() => {});
+        }
+      } catch {
+        /* 听不清就算了，别影响主线 */
+      }
+    },
+    { global: true },
+  );
+
   // ── 工具 ──────────────────────────────────────────────────────────────
   ctx.tools.register(defineTool({
     name: "neighbor_say",
@@ -705,6 +782,7 @@ export function apply(ctx, config) {
       "读隔壁：最近兄弟之间留的话，以及哥哥在各个工作区说过的话。想翻更早的记录时用。",
     parameters: {
       limit: { type: "integer", description: "最多取多少条，默认 20，上限 100。" },
+      as: { type: "string", description: "强制用这个名字身份读。子会话认不出工作区时用，平时不用填。" },
     },
     output: {
       schema: {
@@ -719,8 +797,8 @@ export function apply(ctx, config) {
     },
     isConcurrencySafe: () => true,
     async execute(args, exec) {
-      const me = identityOf(exec?.agent);
-      if (!me) throw new Error("neighbor_read: 认不出当前工作区是谁，先检查 agents 配置");
+      const me = String(args?.as ?? "").trim() || identityOf(exec?.agent);
+      if (!me) throw new Error("neighbor_read: 认不出当前工作区是谁，先检查 agents 配置，或者显式传 as");
       const limit = Math.min(Math.max(Number(args?.limit ?? 20), 1), 100);
       const all = await readAll();
       const tail = all.slice(-limit);
